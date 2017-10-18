@@ -1,6 +1,50 @@
-## 1.3.1 / December 2014
-  
-  * Fix for Ruby 2.0 compatibilty
+## 1.7.0
+
+  * Meta stores now receive a third ttl argument to write when use_native_ttl is used.
+
+## 1.6.1
+
+  * Revert 'No longer read responses from cache when we already have them'
+
+## 1.6.0
+
+  * Noop backend
+  * No longer read responses from cache when we already have them
+  * renamed files from entitystore -> entity_store (metastore/cachecontrol/appengine) and added warns for old ones
+
+## 1.5.1
+
+  * fix key generation for query strings that include encoded equals
+
+## 1.5.0
+
+  * only catch StandardError and not Exception
+
+## 1.4.3
+
+  * After overriding the REQUEST_METHOD, store the original request method in "rack.methodoverride.original_method"
+
+## 1.4.1
+
+  * Ignore invalid Expires date as per RFC
+
+## 1.4.0
+
+  * Not invalidating the cache for preflight CORS request
+
+## 1.3.1 / October 2015
+
+  * Support Ruby 1.9
+
+## 1.3 / Octorber 2015
+
+  * Ruby 2.0 only
+
+  * Gracefully degrade when cache store goes offline
+
+  * allow_reload/revalidate is not enabled by default
+
+  * Make Rack::Cache multithread friendly
 
 ## 1.2 / March 2012
 

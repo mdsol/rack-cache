@@ -6,15 +6,6 @@ require 'rack/cache/storage'
 module Rack::Cache
   # Implements Rack's middleware interface and provides the context for all
   # cache logic, including the core logic engine.
-
-  # The list of exceptions indicating a network failure.
-  def self.network_failure_exceptions
-    # TODO: Make these configurable, to work in a non-faraday environment.
-    @network_failure_exceptions ||= Set.new(
-      %w(Timeout::Error Faraday::Error::ConnectionFailed Faraday::Error::TimeoutError)
-    )
-  end
-  
   class Context
     include Rack::Cache::Options
 
@@ -70,14 +61,18 @@ module Rack::Cache
       @request = Request.new(@env.dup.freeze)
 
       response =
-        if @request.get? || @request.head? || @request.report?
+        if @request.get? || @request.head?
           if !@env['HTTP_EXPECT'] && !@env['rack-cache.force-pass']
             lookup
           else
             pass
           end
         else
-          invalidate
+          if @request.options?
+            pass
+          else
+            invalidate
+          end
         end
 
       # log trace and set X-Rack-Cache tracing header
@@ -92,7 +87,7 @@ module Rack::Cache
       end
 
       # tidy up response a bit
-      if (@request.get? || @request.head? || @request.report?) && not_modified?(response)
+      if (@request.get? || @request.head?) && not_modified?(response)
         response.not_modified!
       end
 
@@ -156,7 +151,7 @@ module Rack::Cache
     # See RFC2616 13.10
     def invalidate
       metastore.invalidate(@request, entitystore)
-    rescue Exception => e
+    rescue => e
       log_error(e)
       pass
     else
@@ -168,9 +163,7 @@ module Rack::Cache
     # found and is fresh, use it as the response without forwarding any
     # request to the backend. When a matching cache entry is found but is
     # stale, attempt to #validate the entry with the backend using conditional
-    # GET. If validation fails due to a timeout or connection error, serve the
-    # stale cache entry anyway. When no matching cache entry is found, trigger
-    # miss processing.
+    # GET. When no matching cache entry is found, trigger #miss processing.
     def lookup
       if @request.no_cache? && allow_reload?
         record :reload
@@ -178,7 +171,7 @@ module Rack::Cache
       else
         begin
           entry = metastore.lookup(@request, entitystore)
-        rescue Exception => e
+        rescue => e
           log_error(e)
           return pass
         end
@@ -189,47 +182,12 @@ module Rack::Cache
             entry
           else
             record :stale
-            validate_with_retries_and_stale_cache_failover(entry)
+            validate(entry)
           end
         else
           record :miss
-          fetch_with_retries
+          fetch
         end
-      end
-    end
-    
-    # Returns stale cache on timeout or connection error.
-    def validate_with_retries_and_stale_cache_failover(entry)
-      begin
-        send_with_retries(:validate, entry)
-      rescue => e
-        if fault_tolerant_condition? && network_failure_exception?(e)
-          record :connnection_failed
-          age = entry.age.to_s
-          entry.headers['Age'] = age
-          record "Fail-over to stale cache data with age #{age} due to #{e.class.name}: #{e.to_s}"
-          entry
-        else
-          raise
-        end
-      end
-    end
-
-    # Calls fetch wrapped with retries.
-    def fetch_with_retries
-      send_with_retries(:fetch)
-    end
-
-    # This method is used to test if in an error case the fallback to stale
-    # data should be performed.
-    # If the per-request parameter :fallback_to_cache is in the middleware options then it will be used to decide.
-    # If it is not present, then the global setting will be honored.
-    # Setting the per-request option to false overrides the global settings!
-    def fault_tolerant_condition?
-      if @request.env.include?(:middleware_options) && @request.env[:middleware_options].include?(:fallback_to_cache)
-        @request.env[:middleware_options][:fallback_to_cache]
-      else
-        fault_tolerant?
       end
     end
 
@@ -237,14 +195,10 @@ module Rack::Cache
     # as a template for a conditional GET request with the backend.
     def validate(entry)
       # send no head requests because we want content
-      if @request.report?
-        @env['REQUEST_METHOD'] = 'POST' 
-      else
-        @env['REQUEST_METHOD'] = 'GET'
-      end
+      convert_head_to_get!
 
       # add our cached last-modified validator to the environment
-      @env['HTTP_IF_MODIFIED_SINCE'] = entry.last_modified if entry.last_modified
+      @env['HTTP_IF_MODIFIED_SINCE'] = entry.last_modified
 
       # Add our cached etag validator to the environment.
       # We keep the etags from the client to handle the case when the client
@@ -252,7 +206,8 @@ module Rack::Cache
       cached_etags = entry.etag.to_s.split(/\s*,\s*/)
       request_etags = @request.env['HTTP_IF_NONE_MATCH'].to_s.split(/\s*,\s*/)
       etags = (cached_etags + request_etags).uniq
-      @env['HTTP_IF_NONE_MATCH'] = etags.join(', ') unless etags.empty?
+      @env['HTTP_IF_NONE_MATCH'] = etags.empty? ? nil : etags.join(', ')
+
       response = forward
 
       if response.status == 304
@@ -278,7 +233,7 @@ module Rack::Cache
         record :invalid
       end
 
-      store(response) if response.cacheable?(private_cache?)
+      store(response) if response.cacheable?
 
       response
     end
@@ -289,11 +244,7 @@ module Rack::Cache
     # caching of the response when the backend returns a 304.
     def fetch
       # send no head requests because we want content
-      if @request.report?
-        @env['REQUEST_METHOD'] = 'POST' 
-      else
-        @env['REQUEST_METHOD'] = 'GET'
-      end
+      convert_head_to_get!
 
       response = forward
 
@@ -309,7 +260,7 @@ module Rack::Cache
         response.ttl = default_ttl
       end
 
-      store(response) if response.cacheable?(private_cache?)
+      store(response) if response.cacheable?
 
       response
     end
@@ -319,7 +270,7 @@ module Rack::Cache
       strip_ignore_headers(response)
       metastore.store(@request, response, entitystore)
       response.headers['Age'] = response.age.to_s
-    rescue Exception => e
+    rescue => e
       log_error(e)
       nil
     else
@@ -348,40 +299,12 @@ module Rack::Cache
         @env['rack.errors'].write(message)
       end
     end
-    
-    private
 
-    # How many times has the consumer requested retries.
-    def requested_retries
-      retries_defined? ? @request.env[:middleware_options][:retries].to_i : 0
-    end
-
-    # Whether the consumer asked us to retry.
-    def retries_defined?
-      @request.env[:middleware_options] && @request.env[:middleware_options][:retries]
-    end
-
-    # Whether the error is a known network failure exception or not.
-    def network_failure_exception?(error)
-      Rack::Cache.network_failure_exceptions.include?(error.class.name)
-    end
-
-    # Sends a method and wraps it with a retry loop if retries are requested
-    def send_with_retries(method, *args)
-      retries = requested_retries
-      retry_counter = 0
-
-      begin
-        send(method, *args)
-      rescue => e
-        if network_failure_exception?(e) && (retry_counter < retries)
-          retry_counter += 1
-          record "Retrying #{retry_counter} of #{retries} times due to #{e.class.name}: #{e.to_s}"
-          retry
-        else
-          record "Failed retry after #{retries} retries due to #{e.class.name}: #{e.to_s}"
-          raise
-        end
+    # send no head requests because we want content
+    def convert_head_to_get!
+      if @env['REQUEST_METHOD'] == 'HEAD'
+        @env['REQUEST_METHOD'] = 'GET'
+        @env['rack.methodoverride.original_method'] = 'HEAD'
       end
     end
   end

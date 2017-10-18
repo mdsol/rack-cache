@@ -1,6 +1,6 @@
 require 'uri'
-require 'rack/cache/metastore'
-require 'rack/cache/entitystore'
+require 'rack/cache/meta_store'
+require 'rack/cache/entity_store'
 
 module Rack::Cache
 
@@ -29,6 +29,7 @@ module Rack::Cache
     end
 
   private
+
     def create_store(type, uri)
       if uri.respond_to?(:scheme) || uri.respond_to?(:to_str)
         uri = URI.parse(uri) unless uri.respond_to?(:scheme)
@@ -53,6 +54,7 @@ module Rack::Cache
     end
 
   public
+
     @@singleton_instance = new
     def self.instance
       @@singleton_instance

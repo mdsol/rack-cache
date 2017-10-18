@@ -107,16 +107,6 @@ module Rack::Cache
     # be used.
     option_accessor :use_native_ttl
 
-    # Specifies whether to serve a request from a stale cache entry if
-    # the attempt to revalidate that entry returns a connection
-    # failure or times out.
-    option_accessor :fault_tolerant
-
-    # Specifies whether to cache responses that are designated private
-    # Disabled by default, only turn this on if you will not be passing
-    # the response on or can handle access control for all responses.
-    option_accessor :private_cache
-
     # The underlying options Hash. During initialization (or outside of a
     # request), this is a default values Hash. During a request, this is the
     # Rack environment Hash. The default values Hash is merged in underneath
@@ -159,8 +149,6 @@ module Rack::Cache
         'rack-cache.allow_reload'     => false,
         'rack-cache.allow_revalidate' => false,
         'rack-cache.use_native_ttl'   => false,
-        'rack-cache.fault_tolerant'   => false,
-        'rack-cache.private_cache'    => false,
       }
       self.options = options
     end

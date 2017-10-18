@@ -2,7 +2,7 @@ require 'time'
 require 'set'
 require 'rack/response'
 require 'rack/utils'
-require 'rack/cache/cachecontrol'
+require 'rack/cache/cache_control'
 
 module Rack::Cache
 
@@ -93,16 +93,15 @@ module Rack::Cache
       ttl && ttl > 0
     end
 
-    # Determine if the response is worth caching under any circumstance.
-    # Responses marked "private" with an explicit Cache-Control directive
-    # or any configured private header are uncacheable unless private_cache is enabled
+    # Determine if the response is worth caching under any circumstance. Responses
+    # marked "private" with an explicit Cache-Control directive are considered
+    # uncacheable
     #
     # Responses with neither a freshness lifetime (Expires, max-age) nor cache
     # validator (Last-Modified, ETag) are considered uncacheable.
-    def cacheable?(private_cache = false)
+    def cacheable?
       return false unless CACHEABLE_RESPONSE_CODES.include?(status)
-      return false if cache_control.no_store?
-      return false if !private_cache && cache_control.private?
+      return false if cache_control.no_store? || cache_control.private?
       validateable? || fresh?
     end
 
@@ -134,8 +133,8 @@ module Rack::Cache
       headers['Age'] = max_age.to_s if fresh?
     end
 
-    # The date, as specified by the Date header. When no Date header is present,
-    # set the Date header to Time.now and return.
+    # The date, as specified by the Date header. When no Date header is present
+    # or is unparseable, set the Date header to Time.now and return.
     def date
       if date = headers['Date']
         Time.httpdate(date)
@@ -143,11 +142,14 @@ module Rack::Cache
         headers['Date'] = now.httpdate unless headers.frozen?
         now
       end
+    rescue ArgumentError
+      headers['Date'] = now.httpdate unless headers.frozen?
+      now
     end
 
     # The age of the response.
     def age
-      [headers['Age'].to_i, (now - date).to_i].max
+      (headers['Age'] ||  [(now - date).to_i, 0].max).to_i
     end
 
     # The number of seconds after the time specified in the response's Date
@@ -165,6 +167,8 @@ module Rack::Cache
     # The value of the Expires header as a Time object.
     def expires
       headers['Expires'] && Time.httpdate(headers['Expires'])
+    rescue ArgumentError
+      nil
     end
 
     # The number of seconds after which the response should no longer
