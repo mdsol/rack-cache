@@ -10,7 +10,9 @@ module Rack::Cache
   # everything defined by Rack::Request as well as the Headers and
   # RequestHeaders modules.
   class Request < Rack::Request
+    
     REPORT = "report".freeze
+    
     # The HTTP request method. This is the standard implementation of this
     # method but is respecified here due to libraries that attempt to modify
     # the behavior to respect POST tunnel method specifiers. We always want
@@ -27,6 +29,7 @@ module Rack::Cache
     def report?
       @env['HTTP_X_HTTP_METHOD_OVERRIDE'] == REPORT
     end
+    
     # True when the Cache-Control/no-cache directive is present or the
     # Pragma header is set to no-cache.
     def no_cache?
