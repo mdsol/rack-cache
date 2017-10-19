@@ -1,6 +1,5 @@
 require "#{File.dirname(__FILE__)}/spec_setup"
 require 'rack/cache/context'
-require 'byebug'
 
 describe 'Rack::Cache::Context' do
   before { setup_cache_context }
