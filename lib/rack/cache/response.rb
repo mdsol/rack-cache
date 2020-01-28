@@ -2,7 +2,7 @@ require 'time'
 require 'set'
 require 'rack/response'
 require 'rack/utils'
-require 'rack/cache/cachecontrol'
+require 'rack/cache/cache_control'
 
 module Rack::Cache
 
@@ -133,8 +133,8 @@ module Rack::Cache
       headers['Age'] = max_age.to_s if fresh?
     end
 
-    # The date, as specified by the Date header. When no Date header is present,
-    # set the Date header to Time.now and return.
+    # The date, as specified by the Date header. When no Date header is present
+    # or is unparseable, set the Date header to Time.now and return.
     def date
       if date = headers['Date']
         Time.httpdate(date)
@@ -142,6 +142,9 @@ module Rack::Cache
         headers['Date'] = now.httpdate unless headers.frozen?
         now
       end
+    rescue ArgumentError
+      headers['Date'] = now.httpdate unless headers.frozen?
+      now
     end
 
     # The age of the response.
@@ -164,6 +167,8 @@ module Rack::Cache
     # The value of the Expires header as a Time object.
     def expires
       headers['Expires'] && Time.httpdate(headers['Expires'])
+    rescue ArgumentError
+      nil
     end
 
     # The number of seconds after which the response should no longer

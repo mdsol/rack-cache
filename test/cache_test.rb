@@ -1,27 +1,25 @@
-require "#{File.dirname(__FILE__)}/spec_setup"
+require_relative 'test_helper'
 
-def dumb_app(env)
-  body = block_given? ? [yield] : ['Hi']
-  [ 200, {'Content-Type' => 'text/plain'}, body ]
-end
+describe Rack::Cache do
+  def dumb_app(_env)
+    body = block_given? ? [yield] : ['Hi']
+    [ 200, {'Content-Type' => 'text/plain'}, body ]
+  end
 
-describe 'Rack::Cache::new' do
   before { @app = method(:dumb_app) }
 
   it 'takes a backend and returns a middleware component' do
-    Rack::Cache.new(@app).
-      should.respond_to :call
+    assert Rack::Cache.new(@app).respond_to? :call
   end
 
   it 'takes an options Hash' do
-    lambda { Rack::Cache.new(@app, {}) }.
-      should.not.raise(ArgumentError)
+    Rack::Cache.new(@app, {})
   end
 
   it 'sets options provided in the options Hash' do
     object = Rack::Cache.new(@app, :foo => 'bar', 'foo.bar' => 'bling')
-    object.options['foo.bar'].should.equal 'bling'
-    object.options['rack-cache.foo'].should.equal 'bar'
+    object.options['foo.bar'].must_equal 'bling'
+    object.options['rack-cache.foo'].must_equal 'bar'
   end
 
   it 'takes a block; executes it during initialization' do
@@ -30,9 +28,9 @@ describe 'Rack::Cache::new' do
       Rack::Cache.new @app do |cache|
         object = cache
         state = 'invoked'
-        cache.should.respond_to :set
+        assert cache.respond_to? :set
       end
-    state.should.equal 'invoked'
-    object.should.be.same_as instance
+    state.must_equal 'invoked'
+    object.must_equal instance
   end
 end

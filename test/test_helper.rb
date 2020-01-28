@@ -1,15 +1,13 @@
+require 'bundler/setup'
 require 'pp'
 require 'tmpdir'
 require 'stringio'
 
 [STDOUT, STDERR].each { |io| io.sync = true }
 
-begin
-  require 'bacon'
-rescue LoadError => boom
-  require 'rubygems' rescue nil
-  require 'bacon'
-end
+require 'maxitest/global_must'
+require 'maxitest/autorun'
+require 'mocha/setup'
 
 # Set the MEMCACHED environment variable as follows to enable testing
 # of the MemCached meta and entity stores.
@@ -73,11 +71,6 @@ def need_java(forwhat)
   yield if RUBY_PLATFORM =~ /java/
 end
 
-
-# Setup the load path ..
-$LOAD_PATH.unshift File.dirname(File.dirname(__FILE__)) + '/lib'
-$LOAD_PATH.unshift File.dirname(__FILE__)
-
 require 'rack/cache'
 
 module Rack
@@ -97,6 +90,30 @@ end
 # Methods for constructing downstream applications / response
 # generators.
 module CacheContextHelpers
+  class FakeApp
+    def initialize(status=200, headers={}, body=['Hello World'], bk)
+      @status = status
+      @headers = headers
+      @body = body
+      @bk = bk
+    end
+
+    def call(env)
+      @called = true
+      response = Rack::Response.new(@body, @status, @headers)
+      request = Rack::Request.new(env)
+      @bk.call(request, response) if @bk
+      response.finish
+    end
+
+    def called?
+      @called
+    end
+
+    def reset!
+      @called = false
+    end
+  end
 
   # The Rack::Cache::Context instance used for the most recent
   # request.
@@ -142,18 +159,7 @@ module CacheContextHelpers
 
   # A basic response with 200 status code and a tiny body.
   def respond_with(status=200, headers={}, body=['Hello World'], &bk)
-    called = false
-    @app =
-      lambda do |env|
-        called = true
-        response = Rack::Response.new(body, status, headers)
-        request = Rack::Request.new(env)
-        bk.call(request, response) if bk
-        response.finish
-      end
-    @app.meta_def(:called?) { called }
-    @app.meta_def(:reset!) { called = false }
-    @app
+    @app = FakeApp.new(status, headers, body, bk)
   end
 
   def cache_config(&block)
@@ -220,28 +226,7 @@ module TestHelpers
 
 end
 
-class Bacon::Context
+Minitest::Test.class_eval do
   include TestHelpers
   include CacheContextHelpers
-end
-
-# Metaid == a few simple metaclass helper
-# (See http://whytheluckystiff.net/articles/seeingMetaclassesClearly.html.)
-class Object
-  # The hidden singleton lurks behind everyone
-  def metaclass; class << self; self; end; end
-  def meta_eval(&blk); metaclass.instance_eval(&blk); end
-  # Adds methods to a metaclass
-  def meta_def name, &blk
-    meta_eval { define_method name, &blk }
-  end
-  # Defines an instance method within a class
-  def class_def name, &blk
-    class_eval { define_method name, &blk }
-  end
-
-  # True when the Object is neither false or nil.
-  def truthy?
-    !!self
-  end
 end
