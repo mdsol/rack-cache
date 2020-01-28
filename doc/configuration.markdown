@@ -116,12 +116,27 @@ the appropriate cache key.
 
 The `Rack::Cache::Key` class by default returns the fully qualified url of the request.
 
-In addition to setting the generator to an object, you can just pass a block instead, 
+If you're using `Rack::Cache::Key` and would like to omit parts of the query string
+from the key (e.g. tracking with UTM parameters), you can set a `Proc` on
+`Rack::Cache::Key` like so:
+
+  Rack::Cache::Key.query_string_ignore = proc { |k, v| k =~ /^(trk|utm)_/ }
+
+In addition to setting the generator to an object, you can just pass a block instead,
 which will act as the cache key generator:
-	
+
 	set :cache_key do |request|
 		request.fullpath.replace(/\//, '-')
 	end
-	
+
 For more options see the [Rack::Request documentation](http://rack.rubyforge.org/doc/classes/Rack/Request.html)
-	
+
+### `use_native_ttl`
+
+Passes on the expiration timestamp to cache stores that support it, like
+Memcache and Redis. This may be necessary with some stores to keep them from
+filling up, e.g. if using a Redis backend and the `volatile-ttl` expiration
+policy.
+
+If using `memcached`, it will speed up misses slightly as the middleware won't
+need to fetch metadata and check timestamps.

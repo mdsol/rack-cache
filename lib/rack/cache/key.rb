@@ -4,6 +4,21 @@ module Rack::Cache
   class Key
     include Rack::Utils
 
+    # A proc for ignoring parts of query strings when generating a key. This is
+    # useful when you have parameters like `utm` or `trk` that don't affect the
+    # content on the page and are unique per-visitor or campaign. Parameters
+    # like these will be part of the key and cause a lot of churn.
+    #
+    # The block will be passed a key and value which are the name and value of
+    # that parameter.
+    #
+    # Example:
+    #   `Rack::Cache::Key.query_string_ignore = proc { |k, v| k =~ /^(trk|utm)_/ }`
+    #
+    class << self
+      attr_accessor :query_string_ignore
+    end
+
     # Implement .call, since it seems like the "Rack-y" thing to do. Plus, it
     # opens the door for cache key generators to just be blocks.
     def self.call(request)
@@ -40,13 +55,14 @@ module Rack::Cache
     # Build a normalized query string by alphabetizing all keys/values
     # and applying consistent escaping.
     def query_string
-      return nil if @request.query_string.nil?
+      return nil if @request.query_string.to_s.empty?
 
-      @request.query_string.split(/[&;] */n).
-        map { |p| unescape(p).split('=', 2) }.
-        sort.
-        map { |k,v| "#{escape(k)}=#{escape(v)}" }.
-        join('&')
+      parts = @request.query_string.split(/[&;] */n)
+      parts.map! { |p| p.split('=', 2).map!{ |s| unescape(s) } }
+      parts.sort!
+      parts.reject!(&self.class.query_string_ignore)
+      parts.map! { |k,v| "#{escape(k)}=#{escape(v)}" }
+      parts.join('&')
     end
   end
 end

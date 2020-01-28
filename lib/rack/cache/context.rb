@@ -28,6 +28,7 @@ module Rack::Cache
       @backend = backend
       @trace = []
       @env = nil
+      @options = options
 
       initialize_options options
       yield self if block_given?
@@ -40,14 +41,14 @@ module Rack::Cache
     # value effects the result of this method immediately.
     def metastore
       uri = options['rack-cache.metastore']
-      storage.resolve_metastore_uri(uri)
+      storage.resolve_metastore_uri(uri, @options)
     end
 
     # The configured EntityStore instance. Changing the rack-cache.entitystore
     # value effects the result of this method immediately.
     def entitystore
       uri = options['rack-cache.entitystore']
-      storage.resolve_entitystore_uri(uri)
+      storage.resolve_entitystore_uri(uri, @options)
     end
 
     # The Rack call interface. The receiver acts as a prototype and runs
@@ -77,7 +78,11 @@ module Rack::Cache
             pass
           end
         else
-          invalidate
+          if @request.options?
+            pass
+          else
+            invalidate
+          end
         end
 
       # log trace and set X-Rack-Cache tracing header
@@ -156,7 +161,7 @@ module Rack::Cache
     # See RFC2616 13.10
     def invalidate
       metastore.invalidate(@request, entitystore)
-    rescue Exception => e
+    rescue => e
       log_error(e)
       pass
     else
@@ -178,7 +183,7 @@ module Rack::Cache
       else
         begin
           entry = metastore.lookup(@request, entitystore)
-        rescue Exception => e
+        rescue => e
           log_error(e)
           return pass
         end
@@ -203,15 +208,15 @@ module Rack::Cache
       begin
         send_with_retries(:validate, entry)
       rescue => e
-        if fault_tolerant_condition? && network_failure_exception?(e)
-          record :connnection_failed
-          age = entry.age.to_s
-          entry.headers['Age'] = age
-          record "Fail-over to stale cache data with age #{age} due to #{e.class.name}: #{e.to_s}"
-          entry
-        else
-          raise
+        unless fault_tolerant_condition? && network_failure_exception?(e)
+          raise e
         end
+
+        record :connection_failed
+        age = entry.age.to_s
+        entry.headers['Age'] = age
+        record "Fail-over to stale cache data with age #{age} due to #{e.class.name}: #{e.to_s}"
+        entry
       end
     end
 
@@ -237,7 +242,7 @@ module Rack::Cache
     # as a template for a conditional GET request with the backend.
     def validate(entry)
       # send no head requests because we want content
-      @env['REQUEST_METHOD'] = 'GET'
+      convert_head_to_get!
 
       # add our cached last-modified validator to the environment
       @env['HTTP_IF_MODIFIED_SINCE'] = entry.last_modified if entry.last_modified
@@ -285,7 +290,7 @@ module Rack::Cache
     # caching of the response when the backend returns a 304.
     def fetch
       # send no head requests because we want content
-      @env['REQUEST_METHOD'] = 'GET'
+      convert_head_to_get!
 
       response = forward
 
@@ -311,7 +316,7 @@ module Rack::Cache
       strip_ignore_headers(response)
       metastore.store(@request, response, entitystore)
       response.headers['Age'] = response.age.to_s
-    rescue Exception => e
+    rescue => e
       log_error(e)
       nil
     else
@@ -374,6 +379,14 @@ module Rack::Cache
           record "Failed retry after #{retries} retries due to #{e.class.name}: #{e.to_s}"
           raise
         end
+      end
+    end
+
+    # send no head requests because we want content
+    def convert_head_to_get!
+      if @env['REQUEST_METHOD'] == 'HEAD'
+        @env['REQUEST_METHOD'] = 'GET'
+        @env['rack.methodoverride.original_method'] = 'HEAD'
       end
     end
   end
