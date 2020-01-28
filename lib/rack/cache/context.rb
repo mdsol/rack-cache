@@ -375,14 +375,14 @@ module Rack::Cache
           record "Failed retry after #{retries} retries due to #{e.class.name}: #{e.to_s}"
           raise
         end
+      end
+    end
 
-        # send no head requests because we want content
-        def convert_head_to_get!
-          if @env['REQUEST_METHOD'] == 'HEAD'
-            @env['REQUEST_METHOD'] = 'GET'
-            @env['rack.methodoverride.original_method'] = 'HEAD'
-          end
-        end
+    # send no head requests because we want content
+    def convert_head_to_get!
+      if @env['REQUEST_METHOD'] == 'HEAD'
+        @env['REQUEST_METHOD'] = 'GET'
+        @env['rack.methodoverride.original_method'] = 'HEAD'
       end
     end
   end
