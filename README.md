@@ -122,5 +122,22 @@ so:
 Rack::Cache::Key.query_string_ignore = proc { |k, v| k =~ /^(trk|utm)_/ }
 ```
 
+Ignoring private cache control headers
+-----------------
+
+You can specify that rack-cache _should_ cache requests with private
+Cache-Control headers that normally should _not_ be cached. This should only be
+used when using rack-cache as a _client-side_ middleware, **not** when
+rack-cache is used as a server-side middleware.
+
+Here's an example of how to specify that rack-cache should cache requests with
+private Cache-Control headers as a Faraday middleware:
+
+```Ruby
+Faraday.new('localhost:80/foo') do |conn|
+  conn.use FaradayMiddleware::RackCompatible, Rack::Cache::Context, { metastore: 'heap:/', entitystore: 'heap:/', private_cache: true }
+end
+```
+
 License: MIT<br/>
 [![Build Status](https://travis-ci.org/rtomayko/rack-cache.svg)](https://travis-ci.org/rtomayko/rack-cache)
