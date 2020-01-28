@@ -225,11 +225,11 @@ module Rack::Cache
       send_with_retries(:fetch)
     end
 
-    #This method is used in the lambda of lookup (a few lines up) to test if in an error case the fallback to stale
-    #data should be performed.
-    #If the per-request parameter :fallback_to_cache is in the middleware options then it will be used to decide.
-    #If it is not present, then the global setting will be honored.
-    #Setting the per-request option to false overrides the global settings!
+    # This method is used to test if in an error case the fallback to stale
+    # data should be performed.
+    # If the per-request parameter :fallback_to_cache is in the middleware options then it will be used to decide.
+    # If it is not present, then the global setting will be honored.
+    # Setting the per-request option to false overrides the global settings!
     def fault_tolerant_condition?
       if @request.env.include?(:middleware_options) && @request.env[:middleware_options].include?(:fallback_to_cache)
         @request.env[:middleware_options][:fallback_to_cache]
@@ -279,7 +279,7 @@ module Rack::Cache
         record :invalid
       end
 
-      store(response) if response.cacheable?
+      store(response) if response.cacheable?(private_cache?)
 
       response
     end
@@ -306,7 +306,7 @@ module Rack::Cache
         response.ttl = default_ttl
       end
 
-      store(response) if response.cacheable?
+      store(response) if response.cacheable?(private_cache?)
 
       response
     end
@@ -371,11 +371,7 @@ module Rack::Cache
       begin
         send(method, *args)
       rescue => e
-        unless (retries > 0) && network_failure_exception?(e)
-          raise e
-        end
-
-        if retry_counter < retries
+        if network_failure_exception?(e) && (retry_counter < retries)
           retry_counter += 1
           record "Retrying #{retry_counter} of #{retries} times due to #{e.class.name}: #{e.to_s}"
           retry

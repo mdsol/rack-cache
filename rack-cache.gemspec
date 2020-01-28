@@ -1,4 +1,9 @@
 Gem::Specification.new 'rack-cache', '1.11.0' do |s|
+  s.specification_version = 2 if s.respond_to? :specification_version=
+  s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
+
+  s.name = 'rack-cache'
+
   s.summary     = "HTTP Caching for Rack"
   s.description = "Rack::Cache is suitable as a quick drop-in component to enable HTTP caching for Rack-based applications that produce freshness (Expires, Cache-Control) and/or validation (Last-Modified, ETag) information."
   s.required_ruby_version = '>= 2.3.0'

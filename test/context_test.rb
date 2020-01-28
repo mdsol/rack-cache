@@ -288,6 +288,14 @@ describe Rack::Cache::Context do
     response.headers.must_include 'Age'
   end
 
+  it 'stores private responses when private_cache is set to true' do
+    respond_with 200, 'Cache-Control' => 'max-age=10000, private'
+
+    get '/', 'rack-cache.private_cache' => true
+    response.should.be.ok
+    cache.trace.should.include :store
+  end
+
   it 'reloads responses when cache hits but no-cache request directive present ' +
      'when allow_reload is set true' do
     count = 0
