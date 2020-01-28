@@ -207,8 +207,12 @@ module Rack::Cache
     def validate_with_retries_and_stale_cache_failover(entry)
       begin
         send_with_retries(:validate, entry)
-      rescue lambda { |error| fault_tolerant_condition? && network_failure_exception?(error) } => e
-        record :connnection_failed
+      rescue => e
+        unless fault_tolerant_condition? && network_failure_exception?(e)
+          raise e
+        end
+
+        record :connection_failed
         age = entry.age.to_s
         entry.headers['Age'] = age
         record "Fail-over to stale cache data with age #{age} due to #{e.class.name}: #{e.to_s}"
@@ -366,7 +370,11 @@ module Rack::Cache
 
       begin
         send(method, *args)
-      rescue lambda { |error| (retries > 0) && network_failure_exception?(error) } => e
+      rescue => e
+        unless (retries > 0) && network_failure_exception?(e)
+          raise e
+        end
+
         if retry_counter < retries
           retry_counter += 1
           record "Retrying #{retry_counter} of #{retries} times due to #{e.class.name}: #{e.to_s}"
