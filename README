@@ -1,3 +1,8 @@
+* DEPRECATED *
+
+This forked Rack::Cache is deprecated. Please use the upstream.
+
+
 Rack::Cache
 ===========
 

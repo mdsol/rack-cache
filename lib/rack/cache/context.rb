@@ -70,7 +70,7 @@ module Rack::Cache
       @request = Request.new(@env.dup.freeze)
 
       response =
-        if @request.get? || @request.head?
+        if @request.get? || @request.head? || @request.report?
           if !@env['HTTP_EXPECT'] && !@env['rack-cache.force-pass']
             lookup
           else
@@ -92,7 +92,7 @@ module Rack::Cache
       end
 
       # tidy up response a bit
-      if (@request.get? || @request.head?) && not_modified?(response)
+      if (@request.get? || @request.head? || @request.report?) && not_modified?(response)
         response.not_modified!
       end
 
@@ -202,12 +202,16 @@ module Rack::Cache
     def validate_with_retries_and_stale_cache_failover(entry)
       begin
         send_with_retries(:validate, entry)
-      rescue lambda { |error| fault_tolerant_condition? && network_failure_exception?(error) } => e
-        record :connnection_failed
-        age = entry.age.to_s
-        entry.headers['Age'] = age
-        record "Fail-over to stale cache data with age #{age} due to #{e.class.name}: #{e.to_s}"
-        entry
+      rescue => e
+        if fault_tolerant_condition? && network_failure_exception?(e)
+          record :connnection_failed
+          age = entry.age.to_s
+          entry.headers['Age'] = age
+          record "Fail-over to stale cache data with age #{age} due to #{e.class.name}: #{e.to_s}"
+          entry
+        else
+          raise
+        end
       end
     end
 
@@ -216,11 +220,11 @@ module Rack::Cache
       send_with_retries(:fetch)
     end
 
-    #This method is used in the lambda of lookup (a few lines up) to test if in an error case the fallback to stale
-    #data should be performed.
-    #If the per-request parameter :fallback_to_cache is in the middleware options then it will be used to decide.
-    #If it is not present, then the global setting will be honored.
-    #Setting the per-request option to false overrides the global settings!
+    # This method is used to test if in an error case the fallback to stale
+    # data should be performed.
+    # If the per-request parameter :fallback_to_cache is in the middleware options then it will be used to decide.
+    # If it is not present, then the global setting will be honored.
+    # Setting the per-request option to false overrides the global settings!
     def fault_tolerant_condition?
       if @request.env.include?(:middleware_options) && @request.env[:middleware_options].include?(:fallback_to_cache)
         @request.env[:middleware_options][:fallback_to_cache]
@@ -233,7 +237,11 @@ module Rack::Cache
     # as a template for a conditional GET request with the backend.
     def validate(entry)
       # send no head requests because we want content
-      @env['REQUEST_METHOD'] = 'GET'
+      if @request.report?
+        @env['REQUEST_METHOD'] = 'POST' 
+      else
+        @env['REQUEST_METHOD'] = 'GET'
+      end
 
       # add our cached last-modified validator to the environment
       @env['HTTP_IF_MODIFIED_SINCE'] = entry.last_modified if entry.last_modified
@@ -270,7 +278,7 @@ module Rack::Cache
         record :invalid
       end
 
-      store(response) if response.cacheable?
+      store(response) if response.cacheable?(private_cache?)
 
       response
     end
@@ -281,7 +289,11 @@ module Rack::Cache
     # caching of the response when the backend returns a 304.
     def fetch
       # send no head requests because we want content
-      @env['REQUEST_METHOD'] = 'GET'
+      if @request.report?
+        @env['REQUEST_METHOD'] = 'POST' 
+      else
+        @env['REQUEST_METHOD'] = 'GET'
+      end
 
       response = forward
 
@@ -297,7 +309,7 @@ module Rack::Cache
         response.ttl = default_ttl
       end
 
-      store(response) if response.cacheable?
+      store(response) if response.cacheable?(private_cache?)
 
       response
     end
@@ -361,8 +373,8 @@ module Rack::Cache
 
       begin
         send(method, *args)
-      rescue lambda { |error| (retries > 0) && network_failure_exception?(error) } => e
-        if retry_counter < retries
+      rescue => e
+        if network_failure_exception?(e) && (retry_counter < retries)
           retry_counter += 1
           record "Retrying #{retry_counter} of #{retries} times due to #{e.class.name}: #{e.to_s}"
           retry
